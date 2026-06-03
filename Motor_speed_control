@@ -1,0 +1,83 @@
+#define BLYNK_TEMPLATE_ID "TMPL3UeUJo7eq"
+#define BLYNK_TEMPLATE_NAME "speed controller"
+#define BLYNK_AUTH_TOKEN "cFZ4W2f1_QsHeNQ5vY-kWPF9CkxnWqne"
+
+
+#include <WiFi.h>
+#include <BlynkSimpleEsp32.h>
+
+char ssid[] = "realme10Pro5G";
+char pass[] = "use your network";
+
+#define IN1 25
+#define IN2 26
+#define ENA 27
+
+int motorSpeed = 0;
+
+// Slider V0
+BLYNK_WRITE(V0)
+{
+  motorSpeed = param.asInt();
+
+  // Update speed immediately if motor is running
+  ledcWrite(ENA, motorSpeed);
+}
+
+// Forward Switch V1
+BLYNK_WRITE(V1)
+{
+  int state = param.asInt();
+
+  if (state)
+  {
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+
+    ledcWrite(ENA, motorSpeed);
+
+    Blynk.virtualWrite(V2, 0);
+  }
+  else
+  {
+    ledcWrite(ENA, 0);
+  }
+}
+
+// Reverse Switch V2
+BLYNK_WRITE(V2)
+{
+  int state = param.asInt();
+
+  if (state)
+  {
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, HIGH);
+
+    ledcWrite(ENA, motorSpeed);
+
+    Blynk.virtualWrite(V1, 0);
+  }
+  else
+  {
+    ledcWrite(ENA, 0);
+  }
+}
+
+void setup()
+{
+  Serial.begin(115200);
+
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+
+  // ESP32 Core 3.x PWM
+  ledcAttach(ENA, 5000, 8);
+
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+}
+
+void loop()
+{
+  Blynk.run();
+}
