@@ -1,0 +1,37 @@
+#define BLYNK_TEMPLATE_ID "TMPL3AhsLim6D"
+#define BLYNK_TEMPLATE_NAME "monitroing"
+#define BLYNK_AUTH_TOKEN "pcuL-d-o_UoKK691w2DUkQw1WK71geWY"
+
+#define BLYNK_PRINT Serial
+
+#include <WiFi.h>
+#include <BlynkSimpleEsp32.h>
+
+char ssid[] = "IQOO 13";
+char pass[] = "Password";
+
+int soilPin  = 34;  // Analog pin for soil sensor
+int relayPin = 23;   // GPIO pin connected to relay
+
+BLYNK_WRITE(V1) {
+  int relayState = param.asInt(); // value from app button
+  digitalWrite(relayPin, relayState);
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(relayPin, OUTPUT);
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+}
+
+void loop() {
+  Blynk.run();
+
+  int soilValue = analogRead(soilPin);
+  Serial.println(soilValue);
+
+  // Send soil moisture value to Blynk app (Virtual Pin V0)
+  Blynk.virtualWrite(V0, soilValue);
+
+  delay(1000);
+}
