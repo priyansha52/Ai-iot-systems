@@ -1,0 +1,303 @@
+#define BLYNK_TEMPLATE_ID "TMPL3gpy9hVm6"
+#define BLYNK_TEMPLATE_NAME "Gas rover"
+#define BLYNK_AUTH_TOKEN "3EpqykmFWSUF2amonkrVkroUfI42-_92"
+
+#include <WiFi.h>
+#include <BlynkSimpleEsp32.h>
+#include <NewPing.h>
+
+char ssid[] = "Airtel_asho_2572";
+char pass[] = "Air@89923";
+
+// ---------------- MQ Sensors ----------------
+#define MQ2_PIN    34
+#define MQ135_PIN  35
+
+// ---------------- Buzzer ----------------
+#define BUZZER 4
+
+// ---------------- Motor Driver ----------------
+#define IN1 26
+#define IN2 27
+#define IN3 14
+#define IN4 12
+
+#define ENA 22
+#define ENB 23
+
+// ---------------- Ultrasonic Sensors ----------------
+#define TRIG_CENTER 5
+#define ECHO_CENTER 18
+
+#define TRIG_LEFT 19
+#define ECHO_LEFT 21
+
+#define TRIG_RIGHT 13
+#define ECHO_RIGHT 15
+
+#define MAX_DISTANCE 200
+
+NewPing centerSonar(TRIG_CENTER, ECHO_CENTER, MAX_DISTANCE);
+NewPing leftSonar(TRIG_LEFT, ECHO_LEFT, MAX_DISTANCE);
+NewPing rightSonar(TRIG_RIGHT, ECHO_RIGHT, MAX_DISTANCE);
+
+BlynkTimer timer;
+
+// ---------------- PWM ----------------
+const int freq = 1000;
+const int resolution = 8;
+
+// ---------------- Variables ----------------
+bool manualMode = false;
+bool warningSent = false;
+bool criticalSent = false;
+
+int xValue = 0;
+int yValue = 0;
+
+// ---------------- Blynk ----------------
+BLYNK_WRITE(V0)
+{
+  xValue = param.asInt();
+}
+
+BLYNK_WRITE(V1)
+{
+  yValue = param.asInt();
+}
+
+BLYNK_WRITE(V6)
+{
+  manualMode = param.asInt();
+}
+
+// ---------------- Motor Functions ----------------
+void stopRobot()
+{
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
+
+  ledcWrite(ENA, 0);
+  ledcWrite(ENB, 0);
+
+  Blynk.virtualWrite(V5, "STOP");
+}
+
+void moveForward(int speedVal)
+{
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+
+  ledcWrite(ENA, speedVal);
+  ledcWrite(ENB, speedVal);
+
+  Blynk.virtualWrite(V5, "FORWARD");
+}
+
+void moveBackward(int speedVal)
+{
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
+
+  ledcWrite(ENA, speedVal);
+  ledcWrite(ENB, speedVal);
+
+  Blynk.virtualWrite(V5, "BACKWARD");
+}
+
+void turnLeft(int speedVal)
+{
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+
+  ledcWrite(ENA, speedVal);
+  ledcWrite(ENB, speedVal);
+
+  Blynk.virtualWrite(V5, "LEFT");
+}
+
+void turnRight(int speedVal)
+{
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
+
+  ledcWrite(ENA, speedVal);
+  ledcWrite(ENB, speedVal);
+
+  Blynk.virtualWrite(V5, "RIGHT");
+}
+
+// ---------------- Gas Monitoring ----------------
+void checkGas()
+{
+  int mq2 = analogRead(MQ2_PIN);
+  int mq135 = analogRead(MQ135_PIN);
+
+  Blynk.virtualWrite(V2, mq2);
+  Blynk.virtualWrite(V3, mq135);
+
+  if (mq2 < 1000)
+  {
+    digitalWrite(BUZZER, LOW);
+
+    warningSent = false;
+    criticalSent = false;
+
+    Blynk.virtualWrite(V4, "SAFE");
+  }
+  else if (mq2 >= 1000 && mq2 <= 2000)
+  {
+    stopRobot();
+
+    Blynk.virtualWrite(V4, "WARNING");
+
+    for (int i = 0; i < 3; i++)
+    {
+      digitalWrite(BUZZER, HIGH);
+      delay(300);
+      digitalWrite(BUZZER, LOW);
+      delay(300);
+    }
+
+    if (!warningSent)
+    {
+      Blynk.logEvent("gas_warning",
+                     String("MQ2 Value = ") + mq2);
+      warningSent = true;
+    }
+  }
+  else
+  {
+    stopRobot();
+
+    digitalWrite(BUZZER, HIGH);
+
+    Blynk.virtualWrite(V4, "CRITICAL");
+
+    if (!criticalSent)
+    {
+      Blynk.logEvent("gas_critical",
+                     String("MQ2 Value = ") + mq2);
+      criticalSent = true;
+    }
+  }
+}
+
+// ---------------- Manual Mode ----------------
+void manualControl()
+{
+  int speedVal = map(abs(yValue), 0, 100, 0, 255);
+
+  if (yValue > 20)
+  {
+    moveForward(speedVal);
+  }
+  else if (yValue < -20)
+  {
+    moveBackward(speedVal);
+  }
+  else if (xValue < -20)
+  {
+    turnLeft(180);
+  }
+  else if (xValue > 20)
+  {
+    turnRight(180);
+  }
+  else
+  {
+    stopRobot();
+  }
+}
+
+// ---------------- Auto Mode ----------------
+void autoMode()
+{
+  int center = centerSonar.ping_cm();
+  int leftD = leftSonar.ping_cm();
+  int rightD = rightSonar.ping_cm();
+
+  if (center == 0) center = 200;
+  if (leftD == 0) leftD = 200;
+  if (rightD == 0) rightD = 200;
+
+  if (center > 12)
+  {
+    moveForward(180);
+  }
+  else
+  {
+    stopRobot();
+    delay(300);
+
+    if (leftD > rightD)
+    {
+      turnLeft(180);
+      delay(700);
+    }
+    else if (rightD > leftD)
+    {
+      turnRight(180);
+      delay(700);
+    }
+    else
+    {
+      moveBackward(180);
+      delay(1000);
+    }
+  }
+}
+
+// ---------------- Setup ----------------
+void setup()
+{
+  Serial.begin(115200);
+
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+
+  pinMode(BUZZER, OUTPUT);
+
+  ledcAttach(ENA, freq, resolution);
+  ledcAttach(ENB, freq, resolution);
+
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+
+  timer.setInterval(1000L, checkGas);
+}
+
+// ---------------- Loop ----------------
+void loop()
+{
+  Blynk.run();
+  timer.run();
+
+  int mq2 = analogRead(MQ2_PIN);
+
+  if (mq2 > 1000)
+  {
+    stopRobot();
+    return;
+  }
+
+  if (manualMode)
+    manualControl();
+  else
+    autoMode();
+}
